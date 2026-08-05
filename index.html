@@ -117,15 +117,14 @@
       .catch(err => console.error("Error cargando " + nombreCapa + ":", err));
   }
 
-  // --- CARGA DE TUS CAPAS GEOJSON ---
-  // Reemplaza o ajusta las rutas según los nombres exactos de tus archivos
-  cargarCapa('./dptos.geojson', 'Departamentos (DPTOS)', '#ff3333', true);
-  cargarCapa('./distritos.geojson', 'Distritos PY', '#3388ff');
-  cargarCapa('./asp.geojson', 'Áreas Protegidas (ASP)', '#28a745');
-  cargarCapa('./ci.geojson', 'Comunidades Indígenas (CI)', '#ff9900');
+  // --- CARGA DE TUS CAPAS CON NOMBRES EXACTOS DE TU REPOSITTORIO ---
+  cargarCapa('./DPTOS_GEOJS.geojson', 'Departamentos', '#ff3333', true);
+  cargarCapa('./ASP.geojson', 'Áreas Protegidas (ASP)', '#28a745');
+  cargarCapa('./CI.geojson', 'Comunidades Indígenas (CI)', '#ff9900');
   cargarCapa('./pmf.geojson', 'PMF', '#9933ff');
   cargarCapa('./poa.geojson', 'POA', '#00ffff');
   cargarCapa('./put.geojson', 'PUT', '#e83e8c');
+  cargarCapa('./Distritos PY.geojson', 'Distritos PY', '#3388ff');
 
   // --- LÓGICA DE CAPTURA DE PUNTOS Y GPS ---
   let marcadorUsuario = null;
