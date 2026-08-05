@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Visor Geográfico Paraguay</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
+  <!-- Leaflet CSS y JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: Arial, sans-serif; }
+    #map { height: 100%; width: 100%; position: absolute; z-index: 1; }
+    
+    /* Panel Flotante para Móvil y Desktop */
+    .panel-gps {
+      position: absolute;
+      bottom: 20px;
+      left: 10px;
+      right: 10px;
+      max-width: 380px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
+    .panel-gps h4 { margin: 0 0 8px 0; font-size: 14px; color: #333; text-align: center; }
+    .inputs-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .inputs-row input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+    .btn { width: 100%; padding: 8px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; margin-top: 4px; }
+    .btn-gps { background: #007bff; color: white; }
+    .btn-add { background: #28a745; color: white; }
+    
+    /* Ajustes para el control de capas en móviles */
+    .leaflet-control-layers { border-radius: 8px !important; box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Panel para Capturar Puntos/GPS -->
+<div class="panel-gps">
+  <h4>📍 Capturar Coordenada / GPS</h4>
+  <button class="btn btn-gps" onclick="obtenerGPS()">Obtener mi Ubicación GPS</button>
+  <div style="height: 6px;"></div>
+  <div class="inputs-row">
+    <input type="number" id="lat" placeholder="Latitud (ej: -25.3)" step="any">
+    <input type="number" id="lng" placeholder="Longitud (ej: -57.6)" step="any">
+  </div>
+  <button class="btn btn-add" onclick="marcarCoordenada()">Cargar Punto en el Mapa</button>
+</div>
+
+<script>
+  // Inicializar mapa centrado en Paraguay
+  const map = L.map('map', {
+    zoomControl: false // Ocultar para no estorbar en móviles
+  }).setView([-23.4425, -58.4438], 6);
+
+  L.control.zoom({ position: 'topleft' }).addTo(map);
+
+  // Mapa base OpenStreetMap
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+  }).addTo(map);
+
+  // Mapa base Satelital (Esri)
+  const satelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles © Esri'
+  });
+
+  const baseMaps = {
+    "Mapa Callejero": osm,
+    "Satelital": satelite
+  };
+
+  const overlayMaps = {};
+  const layerControl = L.control.layers(baseMaps, overlayMaps, { collapsed: true }).addTo(map);
+
+  // Función para cargar capas GeoJSON con estilos distintos
+  function cargarCapa(url, nombreCapa, color, activarAlInicio = false) {
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error("No se pudo cargar " + url);
+        return res.json();
+      })
+      .then(data => {
+        const capa = L.geoJSON(data, {
+          style: {
+            color: color,
+            weight: 1.5,
+            fillOpacity: 0.2
+          },
+          onEachFeature: function (feature, layer) {
+            // Mostrar los atributos del polígono al hacer clic
+            if (feature.properties) {
+              let popupContent = '<div style="max-height:150px; overflow-y:auto;">';
+              for (let key in feature.properties) {
+                popupContent += `<b>${key}:</b> ${feature.properties[key]}<br>`;
+              }
+              popupContent += '</div>';
+              layer.bindPopup(popupContent);
+            }
+          }
+        });
+
+        if (activarAlInicio) {
+          capa.addTo(map);
+        }
+        layerControl.addOverlay(capa, nombreCapa);
+      })
+      .catch(err => console.error("Error cargando " + nombreCapa + ":", err));
+  }
+
+  // --- CARGA DE TUS CAPAS GEOJSON ---
+  // Reemplaza o ajusta las rutas según los nombres exactos de tus archivos
+  cargarCapa('./dptos.geojson', 'Departamentos (DPTOS)', '#ff3333', true);
+  cargarCapa('./distritos.geojson', 'Distritos PY', '#3388ff');
+  cargarCapa('./asp.geojson', 'Áreas Protegidas (ASP)', '#28a745');
+  cargarCapa('./ci.geojson', 'Comunidades Indígenas (CI)', '#ff9900');
+  cargarCapa('./pmf.geojson', 'PMF', '#9933ff');
+  cargarCapa('./poa.geojson', 'POA', '#00ffff');
+  cargarCapa('./put.geojson', 'PUT', '#e83e8c');
+
+  // --- LÓGICA DE CAPTURA DE PUNTOS Y GPS ---
+  let marcadorUsuario = null;
+
+  function marcarCoordenada() {
+    const lat = parseFloat(document.getElementById('lat').value);
+    const lng = parseFloat(document.getElementById('lng').value);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      alert("Por favor ingresa coordenadas válidas de Latitud y Longitud.");
+      return;
+    }
+
+    if (marcadorUsuario) map.removeLayer(marcadorUsuario);
+
+    marcadorUsuario = L.marker([lat, lng]).addTo(map)
+      .bindPopup(`<b>Punto Capturado</b><br>Lat: ${lat}<br>Lng: ${lng}`)
+      .openPopup();
+
+    map.setView([lat, lng], 14);
+  }
+
+  function obtenerGPS() {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          document.getElementById('lat').value = lat.toFixed(6);
+          document.getElementById('lng').value = lng.toFixed(6);
+          marcarCoordenada();
+        },
+        (error) => {
+          alert("Error al obtener ubicación GPS: " + error.message);
+        },
+        { enableHighAccuracy: true }
+      );
+    } else {
+      alert("Tu navegador no soporta geolocalización GPS.");
+    }
+  }
+
+  // También permite tocar cualquier punto del mapa para capturar coordenadas
+  map.on('click', function(e) {
+    document.getElementById('lat').value = e.latlng.lat.toFixed(6);
+    document.getElementById('lng').value = e.latlng.lng.toFixed(6);
+    marcarCoordenada();
+  });
+</script>
+
+</body>
+</html>
