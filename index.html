@@ -9,6 +9,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <!-- Proj4js para conversión de coordenadas UTM -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+
   <style>
     * { box-sizing: border-box; }
     body, html { margin: 0; padding: 0; height: 100%; width: 100%; font-family: Arial, sans-serif; }
@@ -29,6 +32,7 @@
       z-index: 1000;
     }
     .panel-gps h4 { margin: 0 0 8px 0; font-size: 14px; color: #333; text-align: center; }
+    .select-crs { width: 100%; padding: 8px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #ccc; font-weight: bold; background: #f8f9fa; font-size: 13px; }
     .inputs-row { display: flex; gap: 8px; margin-bottom: 8px; }
     .inputs-row input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
     .btn { width: 100%; padding: 8px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; margin-top: 4px; }
@@ -43,19 +47,33 @@
 
 <div id="map"></div>
 
-<!-- Panel para Capturar Puntos/GPS -->
+<!-- Panel para Capturar Puntos/GPS con Selector CRS -->
 <div class="panel-gps">
   <h4>📍 Capturar Coordenada / GPS</h4>
+  
+  <!-- Desplegable para seleccionar Sistema de Coordenadas -->
+  <select id="crsType" class="select-crs" onchange="cambiarModoCRS()">
+    <option value="latlng">Geográficas (Lat, Long)</option>
+    <option value="utm21">UTM Zona 21S (WGS84)</option>
+    <option value="utm22">UTM Zona 22S (WGS84)</option>
+  </select>
+
   <button class="btn btn-gps" onclick="obtenerGPS()">Obtener mi Ubicación GPS</button>
   <div style="height: 6px;"></div>
+  
   <div class="inputs-row">
     <input type="number" id="lat" placeholder="Latitud (ej: -25.3)" step="any">
     <input type="number" id="lng" placeholder="Longitud (ej: -57.6)" step="any">
   </div>
+  
   <button class="btn btn-add" onclick="marcarCoordenada()">Cargar Punto en el Mapa</button>
 </div>
 
 <script>
+  // Definición de proyecciones UTM para Paraguay
+  proj4.defs("EPSG:32721", "+proj=utm +zone=21 +south +datum=WGS84 +units=m +no_defs");
+  proj4.defs("EPSG:32722", "+proj=utm +zone=22 +south +datum=WGS84 +units=m +no_defs");
+
   // Inicializar mapa centrado en Paraguay
   const map = L.map('map', {
     zoomControl: false // Ocultar para no estorbar en móviles
@@ -117,9 +135,8 @@
       .catch(err => console.error("Error cargando " + nombreCapa + ":", err));
   }
 
-  // --- CARGA DE TUS CAPAS CON NOMBRES EXACTOS DE TU REPOSITTORIO ---
+  // --- CARGA DE TUS CAPAS CON NOMBRES EXACTOS DE TU REPOSITORIO ---
   cargarCapa('./DPTOS_GEOJS.geojson', 'Departamentos', '#ff3333', true);
-  cargarCapa('./Distritos Occidental', 'Distritos Occidental', '#BDFC88');
   cargarCapa('./ASP.geojson', 'Áreas Protegidas (ASP)', '#28a745');
   cargarCapa('./CI.geojson', 'Comunidades Indígenas (CI)', '#ff9900');
   cargarCapa('./pmf.geojson', 'PMF', '#9933ff');
@@ -127,24 +144,54 @@
   cargarCapa('./put.geojson', 'PUT', '#e83e8c');
   cargarCapa('./poner.geojson', 'put', '#FC9B88');
   cargarCapa('./Distritos PY.geojson', 'Distritos PY', '#88EBFC');
-    
 
-  // --- LÓGICA DE CAPTURA DE PUNTOS Y GPS ---
+  // --- LÓGICA DE CONVERSIÓN Y CAPTURA DE COORDENADAS ---
   let marcadorUsuario = null;
 
-  function marcarCoordenada() {
-    const lat = parseFloat(document.getElementById('lat').value);
-    const lng = parseFloat(document.getElementById('lng').value);
+  function cambiarModoCRS() {
+    const crs = document.getElementById('crsType').value;
+    const inputLat = document.getElementById('lat');
+    const inputLng = document.getElementById('lng');
 
-    if (isNaN(lat) || isNaN(lng)) {
-      alert("Por favor ingresa coordenadas válidas de Latitud y Longitud.");
+    inputLat.value = '';
+    inputLng.value = '';
+
+    if (crs === 'latlng') {
+      inputLat.placeholder = "Latitud (ej: -25.30)";
+      inputLng.placeholder = "Longitud (ej: -57.60)";
+    } else {
+      inputLat.placeholder = "Este / X (ej: 438000)";
+      inputLng.placeholder = "Norte / Y (ej: 7198000)";
+    }
+  }
+
+  function marcarCoordenada() {
+    const crs = document.getElementById('crsType').value;
+    const val1 = parseFloat(document.getElementById('lat').value);
+    const val2 = parseFloat(document.getElementById('lng').value);
+
+    if (isNaN(val1) || isNaN(val2)) {
+      alert("Por favor ingresa coordenadas válidas.");
       return;
+    }
+
+    let lat, lng;
+
+    if (crs === 'latlng') {
+      lat = val1;
+      lng = val2;
+    } else {
+      // Conversión de UTM (Este, Norte) a WGS84 (Lng, Lat)
+      const epsgCode = (crs === 'utm21') ? "EPSG:32721" : "EPSG:32722";
+      const coords = proj4(epsgCode, "EPSG:4326", [val1, val2]);
+      lng = coords[0];
+      lat = coords[1];
     }
 
     if (marcadorUsuario) map.removeLayer(marcadorUsuario);
 
     marcadorUsuario = L.marker([lat, lng]).addTo(map)
-      .bindPopup(`<b>Punto Capturado</b><br>Lat: ${lat}<br>Lng: ${lng}`)
+      .bindPopup(`<b>Punto Capturado</b><br>Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}<br><small>Modo: ${crs.toUpperCase()}</small>`)
       .openPopup();
 
     map.setView([lat, lng], 14);
@@ -154,10 +201,11 @@
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          document.getElementById('lat').value = lat.toFixed(6);
-          document.getElementById('lng').value = lng.toFixed(6);
+          // Cambiar selector a Lat/Lng para el GPS
+          document.getElementById('crsType').value = 'latlng';
+          cambiarModoCRS();
+          document.getElementById('lat').value = pos.coords.latitude.toFixed(6);
+          document.getElementById('lng').value = pos.coords.longitude.toFixed(6);
           marcarCoordenada();
         },
         (error) => {
@@ -170,14 +218,23 @@
     }
   }
 
-  // También permite tocar cualquier punto del mapa para capturar coordenadas
+  // Al hacer clic sobre el mapa, rellena los campos según el CRS seleccionado
   map.on('click', function(e) {
-    document.getElementById('lat').value = e.latlng.lat.toFixed(6);
-    document.getElementById('lng').value = e.latlng.lng.toFixed(6);
+    const crs = document.getElementById('crsType').value;
+
+    if (crs === 'latlng') {
+      document.getElementById('lat').value = e.latlng.lat.toFixed(6);
+      document.getElementById('lng').value = e.latlng.lng.toFixed(6);
+    } else {
+      const epsgCode = (crs === 'utm21') ? "EPSG:32721" : "EPSG:32722";
+      const utmCoords = proj4("EPSG:4326", epsgCode, [e.latlng.lng, e.latlng.lat]);
+      document.getElementById('lat').value = utmCoords[0].toFixed(2);
+      document.getElementById('lng').value = utmCoords[1].toFixed(2);
+    }
+
     marcarCoordenada();
   });
 </script>
 
 </body>
 </html>
-
